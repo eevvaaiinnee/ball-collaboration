@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Carry — a collaborative bowl game</title>
+<style>
+  :root{
+    --bg-deep:#0d0f1f;
+    --bg-panel:#161a2e;
+    --line:#2a3050;
+    --accent-up:#7fe7d8;     /* W */
+    --accent-left:#f2c879;   /* A */
+    --accent-down:#f28fa3;   /* S */
+    --accent-right:#9fa8f5;  /* D */
+    --text:#eef0ff;
+    --text-dim:#8a8fb5;
+    --glow:0 0 18px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+    background:radial-gradient(circle at 50% 20%, #1b2040 0%, var(--bg-deep) 70%);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    color:var(--text);
+  }
+  #app{ width:880px; max-width:96vw; padding:18px; }
+  h1{ font-size:20px; font-weight:600; letter-spacing:0.3px; margin:0 0 4px; }
+  .sub{ color:var(--text-dim); font-size:13px; margin-bottom:6px; line-height:1.4; }
+
+  /* ---------- Lobby ---------- */
+  #lobby{
+    background:var(--bg-panel); border:1px solid var(--line); border-radius:16px;
+    padding:28px; text-align:center;
+  }
+  .slots{ display:flex; justify-content:center; gap:18px; margin:26px 0; flex-wrap:wrap; }
+  .slot{
+    width:140px; padding:16px 10px; border-radius:12px; background:#11142400;
+    border:1px solid var(--line); transition:all .4s ease; opacity:0.35;
+  }
+  .slot.filled{ opacity:1; box-shadow:var(--glow) currentColor inset; }
+  .slot.ready{ border-color:#7fe7d8; box-shadow:0 0 14px rgba(127,231,216,0.35) inset; }
+  .slot .key{ font-size:26px; font-weight:700; margin-bottom:6px; }
+  .slot .label{ font-size:12px; color:var(--text-dim); }
+  .slot .you{ display:none; font-size:11px; margin-top:6px; color:var(--text); font-weight:600; }
+  .slot.you-slot .you{ display:block; }
+  .slot.up{ color:var(--accent-up); }
+  .slot.left{ color:var(--accent-left); }
+  .slot.down{ color:var(--accent-down); }
+  .slot.right{ color:var(--accent-right); }
+
+  button{
+    font-family:inherit; font-size:14px; font-weight:600; padding:11px 26px;
+    border-radius:999px; border:none; cursor:pointer; background:linear-gradient(135deg,#7fe7d8,#9fa8f5);
+    color:#0d0f1f; transition:transform .15s ease, opacity .2s ease;
+  }
+  button:hover{ transform:translateY(-1px); }
+  button:disabled{ opacity:0.35; cursor:default; transform:none; }
+  #lobbyStatus{ font-size:13px; color:var(--text-dim); min-height:18px; margin-bottom:10px; }
+
+  /* ---------- Game ---------- */
+  #game{ display:none; }
+  #hud{ display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+  #toast{ font-size:12px; color:var(--text-dim); min-height:16px; }
+  .stage-wrap{ position:relative; width:800px; max-width:100%; margin:0 auto; }
+  canvas{ display:block; width:100%; aspect-ratio:8/5; background:#10142a; border-radius:14px; border:1px solid var(--line); }
+
+  .compass-icon{
+    position:absolute; width:54px; height:54px; border-radius:50%;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    background:#161a2ecc; border:2px solid var(--line); transition:all .15s ease;
+    font-size:11px; color:var(--text-dim); backdrop-filter:blur(2px);
+  }
+  .compass-icon .k{ font-size:16px; font-weight:700; color:var(--text); }
+  .compass-icon.disc{ opacity:0.3; filter:grayscale(1); }
+  .you-badge{
+    position:absolute; top:-9px; right:-6px; background:#fff; color:#0d0f1f;
+    font-size:9px; font-weight:800; padding:2px 5px; border-radius:999px;
+    box-shadow:0 0 6px rgba(0,0,0,0.4); display:none; letter-spacing:0.3px;
+  }
+  .compass-icon.is-you .you-badge{ display:block; }
+  .compass-icon.pressed{ transform:scale(1.12); box-shadow:var(--glow) currentColor; }
+  .compass-icon.up{ top:-27px; left:50%; transform:translateX(-50%); color:var(--accent-up); }
+  .compass-icon.up.pressed{ transform:translateX(-50%) scale(1.12); }
+  .compass-icon.left{ left:-27px; top:50%; transform:translateY(-50%); color:var(--accent-left); }
+  .compass-icon.left.pressed{ transform:translateY(-50%) scale(1.12); }
+  .compass-icon.down{ bottom:-27px; left:50%; transform:translateX(-50%); color:var(--accent-down); }
+  .compass-icon.down.pressed{ transform:translateX(-50%) scale(1.12); }
+  .compass-icon.right{ right:-27px; top:50%; transform:translateY(-50%); color:var(--accent-right); }
+  .compass-icon.right.pressed{ transform:translateY(-50%) scale(1.12); }
+
+  #winPanel{
+    display:none; position:absolute; inset:0; align-items:center; justify-content:center; flex-direction:column;
+    background:#0d0f1fcc; border-radius:14px; gap:12px;
+  }
+  #winPanel.show{ display:flex; }
+  #winPanel h2{ margin:0; font-size:22px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <h1>Carry</h1>
+  <div class="sub">Four players, four keys, one bowl. Nobody can get it to the basket alone.</div>
+
+  <!-- LOBBY -->
+  <div id="lobby">
+    <div id="lobbyStatus">Connecting you to a room…</div>
+    <div class="slots" id="slots"></div>
+  </div>
+
+  <!-- GAME -->
+  <div id="game">
+    <div id="hud">
+      <div class="sub" style="margin:0;">Hold your key to push the bowl. Let go and it drifts.</div>
+      <div id="toast"></div>
+    </div>
+    <div class="stage-wrap">
+      <canvas id="canvas" width="800" height="500"></canvas>
+      <div class="compass-icon up" id="icon-up"><div class="k">W</div><div class="lbl">Player</div><div class="you-badge">YOU</div></div>
+      <div class="compass-icon left" id="icon-left"><div class="k">A</div><div class="lbl">Player</div><div class="you-badge">YOU</div></div>
+      <div class="compass-icon down" id="icon-down"><div class="k">S</div><div class="lbl">Player</div><div class="you-badge">YOU</div></div>
+      <div class="compass-icon right" id="icon-right"><div class="k">D</div><div class="lbl">Player</div><div class="you-badge">YOU</div></div>
+      <div id="winPanel">
+        <h2>🥣 Delivered.</h2>
+        <div class="sub" style="margin:0;">That took all four of you.</div>
+        <button id="againBtn">Carry another</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ---------------- setup ---------------- */
+const DIRS = ["up","left","down","right"];
+const KEYS = {up:"W", left:"A", down:"S", right:"D"};
+const COLORS = {up:"#7fe7d8", left:"#f2c879", down:"#f28fa3", right:"#9fa8f5"};
+const AVATARS = ["🐧","🦊","🐻","🐢","🦔","🐝","🐙","🦝"];
+
+let players = {}; // dir -> {connected, ready, isHuman, pressed, avatar}
+let humanDir = null;
+let audioCtx = null;
+let lobbyActive = true;
+
+function shuffledAvatars(){
+  const a = [...AVATARS]; for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]];}
+  return a;
+}
+
+function initLobby(){
+  const avatars = shuffledAvatars();
+  humanDir = DIRS[Math.floor(Math.random()*4)];
+  DIRS.forEach((d,i)=>{
+    players[d] = { connected: d===humanDir, ready:false, isHuman: d===humanDir, pressed:false, avatar: avatars[i] };
+  });
+
+  const slotsEl = document.getElementById("slots");
+  slotsEl.innerHTML = "";
+  DIRS.forEach(d=>{
+    const el = document.createElement("div");
+    el.className = `slot ${d}`;
+    el.id = `slot-${d}`;
+    el.innerHTML = `<div class="key">${KEYS[d]}</div><div class="label" id="slotlabel-${d}">waiting…</div><div class="you">that's you</div>`;
+    slotsEl.appendChild(el);
+  });
+
+  document.getElementById(`slot-${humanDir}`).classList.add("you-slot");
+  updateSlotUI(humanDir);
+  refreshLobbyStatus();
+
+  // bots trickle in at random intervals, then ready up shortly after
+  const others = DIRS.filter(d=>d!==humanDir);
+  others.sort(()=>Math.random()-0.5);
+  others.forEach((d,i)=>{
+    setTimeout(()=>{
+      players[d].connected = true;
+      updateSlotUI(d);
+      refreshLobbyStatus();
+      setTimeout(()=>{ markReady(d); }, 500 + Math.random()*1400);
+    }, 700 + i*(600+Math.random()*900));
+  });
+}
+
+function updateSlotUI(d){
+  const slot = document.getElementById(`slot-${d}`);
+  const label = document.getElementById(`slotlabel-${d}`);
+  if(!players[d].connected){
+    slot.classList.remove("filled","ready");
+    label.textContent = "waiting…";
+    return;
+  }
+  slot.classList.add("filled");
+  slot.classList.toggle("ready", players[d].ready);
+  if(players[d].ready){
+    label.textContent = d===humanDir ? "you — ready ✓" : `${players[d].avatar} ready ✓`;
+  } else {
+    label.textContent = d===humanDir ? "you — press SPACE" : `${players[d].avatar} connected`;
+  }
+}
+
+function markReady(d){
+  if(!players[d].connected || players[d].ready) return;
+  players[d].ready = true;
+  updateSlotUI(d);
+  refreshLobbyStatus();
+  checkAllReady();
+}
+
+function refreshLobbyStatus(){
+  const statusEl = document.getElementById("lobbyStatus");
+  const connectedCount = DIRS.filter(d=>players[d].connected).length;
+  const readyCount = DIRS.filter(d=>players[d].connected && players[d].ready).length;
+  if(connectedCount < 4){
+    statusEl.textContent = `Waiting for players… (${connectedCount}/4 connected)`;
+  } else {
+    statusEl.textContent = `All four are in. Press SPACE when you're ready. (${readyCount}/4 ready)`;
+  }
+}
+
+function checkAllReady(){
+  const allReady = DIRS.every(d=>players[d].connected && players[d].ready);
+  if(allReady){
+    startCountdown();
+  }
+}
+
+function startCountdown(){
+  let n = 3;
+  const statusEl = document.getElementById("lobbyStatus");
+  statusEl.textContent = `All four players are in. Starting in ${n}…`;
+  const iv = setInterval(()=>{
+    n--;
+    if(n>0){
+      statusEl.textContent = `All four players are in. Starting in ${n}…`;
+    } else {
+      clearInterval(iv);
+      launchGame();
+    }
+  }, 1000);
+}
+
+function launchGame(){
+  lobbyActive = false;
+  if(audioCtx===null) initAudio();
+  document.getElementById("lobby").style.display = "none";
+  document.getElementById("game").style.display = "block";
+  DIRS.forEach(d=>{
+    document.getElementById(`icon-${d}`).querySelector(".lbl").textContent = players[d].avatar;
+    document.getElementById(`icon-${d}`).classList.toggle("is-you", d===humanDir);
+  });
+  startGame();
+}
+
+window.addEventListener("keydown", (e)=>{
+  if(e.code === "Space" && lobbyActive){
+    e.preventDefault();
+    if(humanDir && players[humanDir] && players[humanDir].connected && !players[humanDir].ready){
+      if(audioCtx===null) initAudio();
+      markReady(humanDir);
+    }
+  }
+});
+
+document.getElementById("againBtn").addEventListener("click", ()=>{
+  document.getElementById("winPanel").classList.remove("show");
+  won = false;
+  resetBall();
+});
+
+/* ---------------- audio ---------------- */
+function initAudio(){
+  audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+}
+const FREQ = {up:392.0, left:329.6, down:261.6, right:493.9};
+function pluck(dir){
+  if(!audioCtx) return;
+  const t = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = "sine";
+  osc.frequency.value = FREQ[dir];
+  gain.gain.setValueAtTime(0.0001, t);
+  gain.gain.linearRampToValueAtTime(0.07, t+0.02);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t+0.6);
+  osc.connect(gain); gain.connect(audioCtx.destination);
+  osc.start(t); osc.stop(t+0.65);
+}
+
+/* ---------------- game world ---------------- */
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const W=800, H=500;
+
+// Top-down maze. Every wall is grounded — attached to the outer border or
+// to another grounded wall — so there's nothing floating loose in a lane.
+// Path: down lane 1 -> up lane 2 into the top gallery -> right across the
+// gallery -> down lane 4 -> LEFT along the bottom into lane 3 -> up to the
+// basket. That gives genuine down, right, up, and left legs.
+const walls = [
+  {x:0,y:0,w:800,h:20},
+  {x:0,y:480,w:800,h:20},
+  {x:0,y:0,w:20,h:500},
+  {x:780,y:0,w:20,h:500},
+  // lane divider 1 — gap at the bottom (lane1 -> lane2)
+  {x:200,y:20,w:20,h:360},
+  // lane divider 2 — grounded on the bottom, open into the gallery above
+  {x:400,y:120,w:20,h:360},
+  // lane divider 3 — grounded on the bottom, gap at the bottom (lane4 -> lane3)
+  {x:580,y:120,w:20,h:260},
+  // cap sealing lane 3's top so the gallery passes over it — anchored to
+  // the two dividers above, which are themselves anchored to the floor
+  {x:420,y:120,w:160,h:20},
+];
+const basket = {x:430,y:140,w:150,h:70};
+
+const waypoints = [
+  {x:100,y:420},  // down lane 1 to the bottom gap
+  {x:300,y:420},  // across into lane 2, bottom
+  {x:300,y:70},   // up lane 2 into the top gallery
+  {x:690,y:70},   // right across the gallery
+  {x:690,y:420},  // down lane 4 to the bottom gap
+  {x:500,y:420},  // left into lane 3, bottom
+  {x:505,y:175},  // up into the basket
+];
+let wpIndex = 0;
+
+let ball = {x:100,y:60,vx:0,vy:0,r:14};
+const ACCEL = 520;
+const FRICTION = 0.9;
+const MAXV = 380;
+const RESTITUTION = 0.35; // short bounce buffer off walls
+
+function resetBall(){
+  ball = {x:100,y:60,vx:0,vy:0,r:14};
+  wpIndex = 0;
+}
+
+/* ---------------- input ---------------- */
+const humanKeyState = {up:false,left:false,down:false,right:false};
+const KEYMAP = {KeyW:"up", KeyA:"left", KeyS:"down", KeyD:"right",
+                ArrowUp:"up", ArrowLeft:"left", ArrowDown:"down", ArrowRight:"right"};
+window.addEventListener("keydown",(e)=>{
+  if(audioCtx && audioCtx.state==="suspended") audioCtx.resume();
+  const d = KEYMAP[e.code]; if(!d || d!==humanDir) return;
+  if(!humanKeyState[d]) pluck(d);
+  humanKeyState[d] = true;
+});
+window.addEventListener("keyup",(e)=>{
+  const d = KEYMAP[e.code]; if(!d) return;
+  humanKeyState[d] = false;
+});
+
+/* ---------------- bot logic ---------------- */
+let botDecision = {up:false,left:false,down:false,right:false};
+function updateBotDecisions(){
+  const target = waypoints[Math.min(wpIndex, waypoints.length-1)];
+  const dx = target.x - ball.x, dy = target.y - ball.y;
+
+  const wantRight = dx > 12;
+  const wantLeft  = dx < -12;
+  const wantDown  = dy > 12;
+  const wantUp    = dy < -12;
+
+  const wants = {up:wantUp, left:wantLeft, down:wantDown, right:wantRight};
+  DIRS.forEach(d=>{
+    if(players[d].isHuman) return;
+    const newVal = wants[d] && Math.random() < 0.88;
+    if(newVal && !botDecision[d] && players[d].connected) pluck(d);
+    botDecision[d] = newVal;
+  });
+}
+setInterval(updateBotDecisions, 140);
+
+/* ---------------- random disconnects ---------------- */
+let chaosIntervals = [];
+let chaosTimeouts = [];
+function scheduleChaos(){
+  DIRS.forEach(d=>{
+    if(players[d].isHuman) return;
+    const iv = setInterval(()=>{
+      if(!players[d].connected) return;
+      if(Math.random() < 0.12){
+        players[d].connected = false;
+        showToast(`${players[d].avatar} (${KEYS[d]}) dropped out.`);
+        const dur = 1800 + Math.random()*2800;
+        const to = setTimeout(()=>{
+          players[d].connected = true;
+          showToast(`${players[d].avatar} (${KEYS[d]}) is back.`);
+        }, dur);
+        chaosTimeouts.push(to);
+      }
+    }, 3500 + Math.random()*1500);
+    chaosIntervals.push(iv);
+  });
+}
+function stopChaos(){
+  chaosIntervals.forEach(clearInterval);
+  chaosTimeouts.forEach(clearTimeout);
+  chaosIntervals = []; chaosTimeouts = [];
+  DIRS.forEach(d=>{ players[d].connected = true; });
+}
+let toastTimer = null;
+function showToast(msg){
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>{ el.textContent=""; }, 2600);
+}
+
+/* ---------------- physics ---------------- */
+function pressedFor(d){
+  if(!players[d].connected) return false;
+  return players[d].isHuman ? humanKeyState[d] : botDecision[d];
+}
+
+function circleRectPush(p, rect){
+  const closeX = Math.max(rect.x, Math.min(p.x, rect.x+rect.w));
+  const closeY = Math.max(rect.y, Math.min(p.y, rect.y+rect.h));
+  const dx = p.x-closeX, dy = p.y-closeY;
+  const dist = Math.hypot(dx,dy);
+  if(dist < p.r && dist>0.0001){
+    const nx = dx/dist, ny=dy/dist;
+    const overlap = p.r-dist;
+    p.x += nx*overlap; p.y += ny*overlap;
+    const vn = p.vx*nx + p.vy*ny;
+    if(vn<0){ p.vx -= vn*nx*(1+RESTITUTION); p.vy -= vn*ny*(1+RESTITUTION); }
+  } else if(dist===0){
+    p.x += p.r; 
+  }
+}
+
+let won = false;
+function step(dt){
+  if(won) return;
+  let ax=0, ay=0;
+  if(pressedFor("up")) ay -= ACCEL;
+  if(pressedFor("down")) ay += ACCEL;
+  if(pressedFor("left")) ax -= ACCEL;
+  if(pressedFor("right")) ax += ACCEL;
+
+  ball.vx += ax*dt; ball.vy += ay*dt;
+  ball.vx *= Math.pow(FRICTION, dt*60);
+  ball.vy *= Math.pow(FRICTION, dt*60);
+  ball.vx = Math.max(-MAXV, Math.min(MAXV, ball.vx));
+  ball.vy = Math.max(-MAXV, Math.min(MAXV, ball.vy));
+  ball.x += ball.vx*dt; ball.y += ball.vy*dt;
+
+  walls.forEach(w=>circleRectPush(ball,w));
+
+  if(wpIndex < waypoints.length-1){
+    const wp = waypoints[wpIndex];
+    if(Math.hypot(wp.x-ball.x, wp.y-ball.y) < 45) wpIndex++;
+  }
+
+  if(ball.x>basket.x+basket.w*0.2 && ball.x<basket.x+basket.w*0.8 &&
+     ball.y>basket.y+10 && ball.y<basket.y+basket.h){
+    won = true;
+    stopChaos();
+    document.getElementById("winPanel").classList.add("show");
+  }
+}
+
+/* ---------------- render ---------------- */
+function draw(){
+  ctx.clearRect(0,0,W,H);
+
+  // waypoint path (more visible)
+  ctx.strokeStyle = "rgba(255,255,255,0.22)";
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([6,5]);
+  ctx.beginPath();
+  ctx.moveTo(ball.x,ball.y);
+  waypoints.slice(wpIndex).forEach(p=>ctx.lineTo(p.x,p.y));
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // walls
+  ctx.fillStyle = "#4d5780";
+  walls.forEach(w=>ctx.fillRect(w.x,w.y,w.w,w.h));
+  ctx.strokeStyle = "#8d97c4";
+  ctx.lineWidth = 1;
+  walls.forEach(w=>ctx.strokeRect(w.x,w.y,w.w,w.h));
+
+  // basket
+  ctx.fillStyle = "rgba(127,231,216,0.15)";
+  ctx.fillRect(basket.x,basket.y,basket.w,basket.h);
+  ctx.strokeStyle = "#7fe7d8";
+  ctx.lineWidth=2;
+  ctx.strokeRect(basket.x,basket.y,basket.w,basket.h);
+  ctx.font="22px sans-serif";
+  ctx.fillText("🧺", basket.x+basket.w/2-14, basket.y+basket.h-14);
+
+  // ball (bowl)
+  ctx.beginPath();
+  ctx.arc(ball.x,ball.y,ball.r,0,Math.PI*2);
+  const grad = ctx.createRadialGradient(ball.x-5,ball.y-5,2,ball.x,ball.y,ball.r);
+  grad.addColorStop(0,"#fff6e0");
+  grad.addColorStop(1,"#d8a85f");
+  ctx.fillStyle = grad;
+  ctx.fill();
+  ctx.strokeStyle = "#8a6a32";
+  ctx.lineWidth=1.5;
+  ctx.stroke();
+}
+
+/* ---------------- icon UI ---------------- */
+function updateIcons(){
+  DIRS.forEach(d=>{
+    const el = document.getElementById(`icon-${d}`);
+    el.classList.toggle("disc", !players[d].connected);
+    el.classList.toggle("pressed", pressedFor(d));
+  });
+}
+
+/* ---------------- loop ---------------- */
+let last = performance.now();
+function loop(now){
+  const dt = Math.min(0.033, (now-last)/1000);
+  last = now;
+  step(dt);
+  draw();
+  updateIcons();
+  requestAnimationFrame(loop);
+}
+
+function startGame(){
+  resetBall();
+  scheduleChaos();
+  requestAnimationFrame((t)=>{ last=t; loop(t); });
+}
+
+initLobby();
+</script>
+</body>
+</html>
