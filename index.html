@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Carry — a collaborative bowl game</title>
+<title>Carry — a collaborative ball game</title>
 <style>
   :root{
     --bg-deep:#0d0f1f;
@@ -39,9 +39,9 @@
   }
   .slot.filled{ opacity:1; box-shadow:var(--glow) currentColor inset; }
   .slot.ready{ border-color:#7fe7d8; box-shadow:0 0 14px rgba(127,231,216,0.35) inset; }
-  .slot .key{ font-size:26px; font-weight:700; margin-bottom:6px; }
-  .slot .label{ font-size:12px; color:var(--text-dim); }
-  .slot .you{ display:none; font-size:11px; margin-top:6px; color:var(--text); font-weight:600; }
+  .slot.key{ font-size:26px; font-weight:700; margin-bottom:6px; }
+  .slot.label{ font-size:12px; color:var(--text-dim); }
+  .slot.you{ display:none; font-size:11px; margin-top:6px; color:var(--text); font-weight:600; }
   .slot.you-slot .you{ display:block; }
   .slot.up{ color:var(--accent-up); }
   .slot.left{ color:var(--accent-left); }
@@ -99,7 +99,7 @@
 <body>
 <div id="app">
   <h1>Carry</h1>
-  <div class="sub">Four players, four keys, one bowl. Nobody can get it to the basket alone.</div>
+  <div class="sub">Four players, four keys, one ball. Nobody can get it to the basket alone.</div>
 
   <!-- LOBBY -->
   <div id="lobby">
@@ -110,7 +110,7 @@
   <!-- GAME -->
   <div id="game">
     <div id="hud">
-      <div class="sub" style="margin:0;">Hold your key to push the bowl. Let go and it drifts.</div>
+      <div class="sub" style="margin:0;">Hold your key to push the ball. Let go and it drifts.</div>
       <div id="toast"></div>
     </div>
     <div class="stage-wrap">
@@ -488,7 +488,7 @@ function draw(){
   ctx.font="22px sans-serif";
   ctx.fillText("🧺", basket.x+basket.w/2-14, basket.y+basket.h-14);
 
-  // ball (bowl)
+  // ball
   ctx.beginPath();
   ctx.arc(ball.x,ball.y,ball.r,0,Math.PI*2);
   const grad = ctx.createRadialGradient(ball.x-5,ball.y-5,2,ball.x,ball.y,ball.r);
